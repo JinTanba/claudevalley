@@ -79,6 +79,17 @@ export class SessionManager {
   }
 
   /**
+   * Stop a running session
+   */
+  stopSession(id: string): boolean {
+    const session = this.sessions.get(id);
+    if (session) {
+      return session.stop();
+    }
+    return false;
+  }
+
+  /**
    * Clean up a session
    */
   async deleteSession(id: string): Promise<boolean> {

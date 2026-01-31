@@ -68,6 +68,7 @@ export class Scheduler {
       createdAt: now,
       lastRunAt: null,
       nextRunAt: params.enabled !== false ? new Date(Date.now() + params.intervalMs).toISOString() : null,
+      sessionId: null, // Will be set on first run
     };
 
     this.tasks.set(id, task);
@@ -88,7 +89,7 @@ export class Scheduler {
    */
   async updateTask(
     id: string,
-    updates: Partial<Pick<ScheduledTask, "name" | "prompt" | "intervalMs" | "enabled">>
+    updates: Partial<Pick<ScheduledTask, "name" | "prompt" | "intervalMs" | "enabled" | "sessionId">>
   ): Promise<ScheduledTask | null> {
     const task = this.tasks.get(id);
     if (!task) {
@@ -222,7 +223,18 @@ export class Scheduler {
 
   private async executeTask(task: ScheduledTask): Promise<ScheduledTaskRun> {
     const startedAt = new Date().toISOString();
-    const session = this.sessionManager.createSession();
+
+    // Reuse existing session or create a new one
+    let session = task.sessionId ? this.sessionManager.getSession(task.sessionId) : undefined;
+    let isNewSession = false;
+
+    if (!session) {
+      session = this.sessionManager.createSession();
+      isNewSession = true;
+      console.log(`Created new session for task: ${task.name} (${task.id}) -> session ${session.id}`);
+    } else {
+      console.log(`Reusing existing session for task: ${task.name} (${task.id}) -> session ${session.id}`);
+    }
 
     console.log(`Executing scheduled task: ${task.name} (${task.id}) in session ${session.id}`);
 
@@ -243,9 +255,16 @@ export class Scheduler {
       run.completedAt = new Date().toISOString();
       run.success = true;
 
-      // Update task's lastRunAt and nextRunAt
+      // Update task's lastRunAt, nextRunAt, and sessionId
       task.lastRunAt = startedAt;
       task.nextRunAt = new Date(Date.now() + task.intervalMs).toISOString();
+
+      // Save session ID if this is a new session
+      if (isNewSession) {
+        task.sessionId = session.id;
+        console.log(`Saved session ID for task: ${task.name} -> ${session.id}`);
+      }
+
       this.tasks.set(task.id, task);
       await this.notifyTasksChanged();
 

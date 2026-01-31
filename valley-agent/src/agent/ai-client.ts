@@ -14,6 +14,7 @@ export interface AIQueryOptions {
   resume?: string;
   settingSources?: ("local" | "project")[];
   hooks?: Record<string, unknown>;
+  abortSignal?: AbortSignal;
 }
 
 const VALLEY_DIR = path.join(os.homedir(), ".valley");
@@ -183,11 +184,16 @@ IMPORTANT: You are running in a sandboxed environment.
     options?: Partial<AIQueryOptions>
   ): AsyncIterable<SDKMessage> {
     const mergedOptions = { ...this.defaultOptions, ...options };
+    const abortSignal = options?.abortSignal;
 
     for await (const message of query({
       prompt,
       options: mergedOptions,
     })) {
+      // Check if aborted
+      if (abortSignal?.aborted) {
+        throw new Error("Query aborted");
+      }
       yield message;
     }
   }

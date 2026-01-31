@@ -544,6 +544,151 @@
     .toast.active {
       display: block;
     }
+
+    /* Scheduler Styles */
+    .scheduler-list {
+      margin-bottom: 1.5rem;
+    }
+
+    .scheduler-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem;
+      background: #1a1a2e;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+    }
+
+    .scheduler-item.disabled {
+      opacity: 0.6;
+    }
+
+    .scheduler-item .scheduler-info {
+      flex: 1;
+    }
+
+    .scheduler-item .scheduler-name {
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .scheduler-item .scheduler-status {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #00ff00;
+    }
+
+    .scheduler-item .scheduler-status.disabled {
+      background: #888;
+    }
+
+    .scheduler-item .scheduler-meta {
+      font-size: 0.75rem;
+      color: #888;
+      margin-top: 0.25rem;
+    }
+
+    .scheduler-item .scheduler-prompt {
+      font-size: 0.75rem;
+      color: #aaa;
+      margin-top: 0.5rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 400px;
+    }
+
+    .scheduler-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .scheduler-actions button {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+    }
+
+    .btn-success {
+      background: #006400;
+    }
+
+    .btn-success:hover {
+      background: #008000;
+    }
+
+    .form-group select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      background: #1a1a2e;
+      color: #eee;
+      font-size: 1rem;
+    }
+
+    .form-group select:focus {
+      outline: none;
+      border-color: #e94560;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .form-row .form-group {
+      flex: 1;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 26px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #444;
+      transition: 0.3s;
+      border-radius: 26px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #eee;
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: #e94560;
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(24px);
+    }
   </style>
 </head>
 <body>
@@ -585,6 +730,7 @@
             rows="2"
           ></textarea>
           <button id="sendBtn" disabled>Send</button>
+          <button id="stopBtn" class="btn btn-danger" style="display: none;">Stop</button>
         </div>
       </div>
     </main>
@@ -597,6 +743,7 @@
       <ul class="settings-nav">
         <li class="settings-nav-item active" data-section="claude-md">CLAUDE.md</li>
         <li class="settings-nav-item" data-section="skills">Skills</li>
+        <li class="settings-nav-item" data-section="scheduler">Scheduler</li>
       </ul>
     </aside>
 
@@ -628,6 +775,18 @@
           <!-- Skills will be loaded here -->
         </div>
       </section>
+
+      <!-- Scheduler Section -->
+      <section class="settings-section" id="schedulerSection">
+        <h2>Scheduler</h2>
+        <p>Create and manage scheduled tasks that run automatically at specified intervals.</p>
+
+        <button class="btn" id="newSchedulerBtn" style="margin-bottom: 1.5rem;">+ New Scheduled Task</button>
+
+        <div class="scheduler-list" id="schedulerList">
+          <!-- Scheduled tasks will be loaded here -->
+        </div>
+      </section>
     </div>
   </div>
 
@@ -652,6 +811,55 @@
       <div class="editor-actions">
         <button class="btn" id="saveSkillBtn">Save Skill</button>
         <button class="btn btn-secondary" id="cancelSkillBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scheduler Editor Modal -->
+  <div class="modal" id="schedulerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="schedulerModalTitle">New Scheduled Task</h3>
+        <button class="modal-close" id="schedulerModalClose">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label for="schedulerNameInput">Task Name</label>
+        <input type="text" id="schedulerNameInput" placeholder="My scheduled task">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="schedulerIntervalValue">Interval</label>
+          <input type="number" id="schedulerIntervalValue" placeholder="5" min="1" value="5">
+        </div>
+        <div class="form-group">
+          <label for="schedulerIntervalUnit">Unit</label>
+          <select id="schedulerIntervalUnit">
+            <option value="1000">Seconds</option>
+            <option value="60000" selected>Minutes</option>
+            <option value="3600000">Hours</option>
+            <option value="86400000">Days</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="schedulerEnabledInput">Enabled</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="schedulerEnabledInput" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="editor-container">
+        <label for="schedulerPromptEditor">Prompt</label>
+        <textarea id="schedulerPromptEditor" style="min-height: 200px;" placeholder="Enter the prompt to execute..."></textarea>
+      </div>
+
+      <div class="editor-actions">
+        <button class="btn" id="saveSchedulerBtn">Save Task</button>
+        <button class="btn btn-secondary" id="cancelSchedulerBtn">Cancel</button>
       </div>
     </div>
   </div>

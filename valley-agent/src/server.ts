@@ -78,6 +78,18 @@ export async function startServer() {
               break;
             }
 
+            case "stop_session": {
+              const stopped = sessionManager.stopSession(message.sessionId);
+              ws.send(
+                JSON.stringify({
+                  type: "session_stopped",
+                  sessionId: message.sessionId,
+                  success: stopped,
+                })
+              );
+              break;
+            }
+
             case "chat": {
               handleChatMessage(ws, message);
               break;
@@ -155,6 +167,12 @@ export async function startServer() {
       if (url.pathname.match(/^\/api\/sessions\/[^/]+\/logs$/) && req.method === "GET") {
         const sessionId = url.pathname.split("/")[3];
         return handleGetSessionLogs(sessionId);
+      }
+
+      // API: Stop a session
+      if (url.pathname.match(/^\/api\/sessions\/[^/]+\/stop$/) && req.method === "POST") {
+        const sessionId = url.pathname.split("/")[3];
+        return handleStopSession(sessionId);
       }
 
       // ==================== Settings API ====================
@@ -377,6 +395,27 @@ async function handleGetSessionLogs(sessionId: string): Promise<Response> {
   });
 }
 
+function handleStopSession(sessionId: string): Response {
+  const stopped = sessionManager.stopSession(sessionId);
+
+  if (!stopped) {
+    return new Response(
+      JSON.stringify({ error: "Session not found or not running" }),
+      {
+        status: 404,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      }
+    );
+  }
+
+  return new Response(
+    JSON.stringify({ success: true, message: "Session stopped" }),
+    {
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    }
+  );
+}
+
 // ==================== Settings Handlers ====================
 
 async function handleGetClaudeMd(): Promise<Response> {
@@ -562,7 +601,7 @@ function handleGetScheduledTask(taskId: string): Response {
 async function handleUpdateScheduledTask(req: Request, taskId: string): Promise<Response> {
   try {
     const body = await req.json();
-    const { name, prompt, intervalMs, enabled } = body;
+    const { name, prompt, intervalMs, enabled, resetSession } = body;
 
     const updates: Record<string, unknown> = {};
     if (name !== undefined) updates.name = name;
@@ -580,6 +619,11 @@ async function handleUpdateScheduledTask(req: Request, taskId: string): Promise<
       updates.intervalMs = intervalMs;
     }
     if (enabled !== undefined) updates.enabled = enabled;
+
+    // Reset session to start a new conversation
+    if (resetSession === true) {
+      updates.sessionId = null;
+    }
 
     const task = await scheduler.updateTask(taskId, updates);
 

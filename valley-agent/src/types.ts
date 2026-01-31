@@ -30,12 +30,18 @@ export interface UnsubscribeSchedulerMessage {
   type: "unsubscribe_scheduler";
 }
 
+export interface StopSessionMessage {
+  type: "stop_session";
+  sessionId: string;
+}
+
 export type IncomingMessage =
   | ChatMessage
   | SubscribeMessage
   | UnsubscribeMessage
   | SubscribeSchedulerMessage
-  | UnsubscribeSchedulerMessage;
+  | UnsubscribeSchedulerMessage
+  | StopSessionMessage;
 
 // Outgoing WebSocket message types
 export interface AssistantMessageOut {
@@ -113,6 +119,7 @@ export interface ScheduledTask {
   createdAt: string;
   lastRunAt: string | null;
   nextRunAt: string | null;
+  sessionId: string | null; // Persistent session ID for multi-turn conversations
 }
 
 export interface ScheduledTaskRun {

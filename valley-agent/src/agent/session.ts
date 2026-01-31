@@ -11,6 +11,7 @@ export class Session {
   private sdkSessionId: string | null = null;
   private logWriter: LogWriter;
   private createdAt: Date;
+  private abortController: AbortController | null = null;
 
   constructor(id: string, logWriter: LogWriter) {
     this.id = id;
@@ -31,14 +32,23 @@ export class Session {
     this.messageCount++;
     console.log(`Processing message ${this.messageCount} in session ${this.id}`);
 
+    // Create new abort controller for this query
+    this.abortController = new AbortController();
+
     this.queryPromise = (async () => {
       try {
         // Use resume for multi-turn, fresh for first message
         const options: Partial<AIQueryOptions> = this.sdkSessionId
-          ? { resume: this.sdkSessionId }
-          : {};
+          ? { resume: this.sdkSessionId, abortSignal: this.abortController?.signal }
+          : { abortSignal: this.abortController?.signal };
 
         for await (const message of this.aiClient.queryStream(content, options)) {
+          // Check if aborted
+          if (this.abortController?.signal.aborted) {
+            console.log(`Session ${this.id} was aborted`);
+            break;
+          }
+
           // Log message
           this.logWriter.appendLog(this.id, message);
 
@@ -57,14 +67,37 @@ export class Session {
           }
         }
       } catch (error) {
-        console.error(`Error in session ${this.id}:`, error);
-        this.broadcastError("Query failed: " + (error as Error).message);
+        const errorMessage = (error as Error).message;
+        if (errorMessage === "Query aborted" || this.abortController?.signal.aborted) {
+          console.log(`Session ${this.id} was stopped by user`);
+          this.broadcast({
+            type: "stopped",
+            sessionId: this.id,
+            message: "Session stopped by user",
+          });
+        } else {
+          console.error(`Error in session ${this.id}:`, error);
+          this.broadcastError("Query failed: " + errorMessage);
+        }
       } finally {
         this.queryPromise = null;
+        this.abortController = null;
       }
     })();
 
     await this.queryPromise;
+  }
+
+  /**
+   * Stop the current query
+   */
+  stop(): boolean {
+    if (this.abortController && this.queryPromise) {
+      console.log(`Stopping session ${this.id}`);
+      this.abortController.abort();
+      return true;
+    }
+    return false;
   }
 
   /**

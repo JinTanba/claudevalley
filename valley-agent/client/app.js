@@ -8,6 +8,8 @@ class ValleyAgentUI {
     this.isProcessing = false;
     this.currentTab = 'chat';
     this.editingSkill = null;
+    this.editingScheduler = null;
+    this.scheduledTasks = [];
 
     this.elements = {
       // Header
@@ -21,6 +23,7 @@ class ValleyAgentUI {
       messages: document.getElementById('messages'),
       messageInput: document.getElementById('messageInput'),
       sendBtn: document.getElementById('sendBtn'),
+      stopBtn: document.getElementById('stopBtn'),
       newSessionBtn: document.getElementById('newSessionBtn'),
 
       // Settings page
@@ -28,11 +31,14 @@ class ValleyAgentUI {
       settingsNavItems: document.querySelectorAll('.settings-nav-item'),
       claudeMdSection: document.getElementById('claudeMdSection'),
       skillsSection: document.getElementById('skillsSection'),
+      schedulerSection: document.getElementById('schedulerSection'),
       claudeMdEditor: document.getElementById('claudeMdEditor'),
       saveClaudeMdBtn: document.getElementById('saveClaudeMdBtn'),
       reloadClaudeMdBtn: document.getElementById('reloadClaudeMdBtn'),
       skillsList: document.getElementById('skillsList'),
       newSkillBtn: document.getElementById('newSkillBtn'),
+      schedulerList: document.getElementById('schedulerList'),
+      newSchedulerBtn: document.getElementById('newSchedulerBtn'),
 
       // Skill modal
       skillModal: document.getElementById('skillModal'),
@@ -42,6 +48,18 @@ class ValleyAgentUI {
       skillContentEditor: document.getElementById('skillContentEditor'),
       saveSkillBtn: document.getElementById('saveSkillBtn'),
       cancelSkillBtn: document.getElementById('cancelSkillBtn'),
+
+      // Scheduler modal
+      schedulerModal: document.getElementById('schedulerModal'),
+      schedulerModalTitle: document.getElementById('schedulerModalTitle'),
+      schedulerModalClose: document.getElementById('schedulerModalClose'),
+      schedulerNameInput: document.getElementById('schedulerNameInput'),
+      schedulerIntervalValue: document.getElementById('schedulerIntervalValue'),
+      schedulerIntervalUnit: document.getElementById('schedulerIntervalUnit'),
+      schedulerEnabledInput: document.getElementById('schedulerEnabledInput'),
+      schedulerPromptEditor: document.getElementById('schedulerPromptEditor'),
+      saveSchedulerBtn: document.getElementById('saveSchedulerBtn'),
+      cancelSchedulerBtn: document.getElementById('cancelSchedulerBtn'),
 
       // Toast
       toast: document.getElementById('toast'),
@@ -64,6 +82,7 @@ class ValleyAgentUI {
 
     // Chat events
     this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
+    this.elements.stopBtn.addEventListener('click', () => this.stopSession());
     this.elements.messageInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -91,6 +110,19 @@ class ValleyAgentUI {
     this.elements.skillModal.addEventListener('click', (e) => {
       if (e.target === this.elements.skillModal) {
         this.closeSkillModal();
+      }
+    });
+
+    // Scheduler events
+    this.elements.newSchedulerBtn.addEventListener('click', () => this.openSchedulerModal());
+    this.elements.schedulerModalClose.addEventListener('click', () => this.closeSchedulerModal());
+    this.elements.cancelSchedulerBtn.addEventListener('click', () => this.closeSchedulerModal());
+    this.elements.saveSchedulerBtn.addEventListener('click', () => this.saveScheduler());
+
+    // Close scheduler modal on backdrop click
+    this.elements.schedulerModal.addEventListener('click', (e) => {
+      if (e.target === this.elements.schedulerModal) {
+        this.closeSchedulerModal();
       }
     });
   }
@@ -125,12 +157,15 @@ class ValleyAgentUI {
     // Update sections
     this.elements.claudeMdSection.classList.toggle('active', section === 'claude-md');
     this.elements.skillsSection.classList.toggle('active', section === 'skills');
+    this.elements.schedulerSection.classList.toggle('active', section === 'scheduler');
 
     // Load data for section
     if (section === 'claude-md') {
       this.loadClaudeMd();
     } else if (section === 'skills') {
       this.loadSkills();
+    } else if (section === 'scheduler') {
+      this.loadScheduledTasks();
     }
   }
 
@@ -327,6 +362,236 @@ class ValleyAgentUI {
     }
   }
 
+  // ==================== Scheduler ====================
+
+  async loadScheduledTasks() {
+    try {
+      const response = await fetch('/api/scheduler/tasks');
+      const data = await response.json();
+      this.scheduledTasks = data.tasks;
+      this.renderSchedulerList(data.tasks);
+    } catch (error) {
+      console.error('Error loading scheduled tasks:', error);
+      this.showToast('Failed to load scheduled tasks', 'error');
+    }
+  }
+
+  renderSchedulerList(tasks) {
+    if (tasks.length === 0) {
+      this.elements.schedulerList.innerHTML = `
+        <div style="color: #888; padding: 1rem; text-align: center;">
+          No scheduled tasks yet. Click "+ New Scheduled Task" to create one.
+        </div>
+      `;
+      return;
+    }
+
+    this.elements.schedulerList.innerHTML = tasks.map(task => `
+      <div class="scheduler-item ${task.enabled ? '' : 'disabled'}" data-task-id="${task.id}">
+        <div class="scheduler-info">
+          <div class="scheduler-name">
+            <span class="scheduler-status ${task.enabled ? '' : 'disabled'}"></span>
+            ${this.escapeHtml(task.name)}
+          </div>
+          <div class="scheduler-meta">
+            Interval: ${this.formatInterval(task.intervalMs)} ·
+            Last run: ${task.lastRunAt ? new Date(task.lastRunAt).toLocaleString() : 'Never'} ·
+            Next run: ${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString() : 'N/A'}
+          </div>
+          <div class="scheduler-prompt">${this.escapeHtml(task.prompt)}</div>
+        </div>
+        <div class="scheduler-actions">
+          <button class="btn btn-success" onclick="app.runSchedulerNow('${task.id}')">Run Now</button>
+          <button class="btn btn-secondary" onclick="app.editScheduler('${task.id}')">Edit</button>
+          <button class="btn btn-secondary" onclick="app.toggleScheduler('${task.id}', ${!task.enabled})">${task.enabled ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-danger" onclick="app.deleteScheduler('${task.id}')">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  formatInterval(ms) {
+    if (ms < 60000) {
+      return `${ms / 1000} seconds`;
+    } else if (ms < 3600000) {
+      return `${ms / 60000} minutes`;
+    } else if (ms < 86400000) {
+      return `${ms / 3600000} hours`;
+    } else {
+      return `${ms / 86400000} days`;
+    }
+  }
+
+  openSchedulerModal(task = null) {
+    this.editingScheduler = task;
+
+    if (task) {
+      this.elements.schedulerModalTitle.textContent = 'Edit Scheduled Task';
+      this.elements.schedulerNameInput.value = task.name;
+      this.elements.schedulerEnabledInput.checked = task.enabled;
+      this.elements.schedulerPromptEditor.value = task.prompt;
+
+      // Parse interval
+      const { value, unit } = this.parseInterval(task.intervalMs);
+      this.elements.schedulerIntervalValue.value = value;
+      this.elements.schedulerIntervalUnit.value = unit;
+    } else {
+      this.elements.schedulerModalTitle.textContent = 'New Scheduled Task';
+      this.elements.schedulerNameInput.value = '';
+      this.elements.schedulerIntervalValue.value = '5';
+      this.elements.schedulerIntervalUnit.value = '60000';
+      this.elements.schedulerEnabledInput.checked = true;
+      this.elements.schedulerPromptEditor.value = '';
+    }
+
+    this.elements.schedulerModal.classList.add('active');
+  }
+
+  closeSchedulerModal() {
+    this.editingScheduler = null;
+    this.elements.schedulerModal.classList.remove('active');
+  }
+
+  parseInterval(ms) {
+    if (ms % 86400000 === 0) {
+      return { value: ms / 86400000, unit: '86400000' };
+    } else if (ms % 3600000 === 0) {
+      return { value: ms / 3600000, unit: '3600000' };
+    } else if (ms % 60000 === 0) {
+      return { value: ms / 60000, unit: '60000' };
+    } else {
+      return { value: ms / 1000, unit: '1000' };
+    }
+  }
+
+  async editScheduler(taskId) {
+    try {
+      const response = await fetch(`/api/scheduler/tasks/${taskId}`);
+      const data = await response.json();
+      this.openSchedulerModal(data.task);
+    } catch (error) {
+      console.error('Error loading scheduled task:', error);
+      this.showToast('Failed to load scheduled task', 'error');
+    }
+  }
+
+  async saveScheduler() {
+    const name = this.elements.schedulerNameInput.value.trim();
+    const intervalValue = parseInt(this.elements.schedulerIntervalValue.value, 10);
+    const intervalUnit = parseInt(this.elements.schedulerIntervalUnit.value, 10);
+    const intervalMs = intervalValue * intervalUnit;
+    const enabled = this.elements.schedulerEnabledInput.checked;
+    const prompt = this.elements.schedulerPromptEditor.value;
+
+    if (!name) {
+      this.showToast('Please enter a task name', 'error');
+      return;
+    }
+
+    if (!prompt) {
+      this.showToast('Please enter a prompt', 'error');
+      return;
+    }
+
+    if (intervalMs < 1000) {
+      this.showToast('Interval must be at least 1 second', 'error');
+      return;
+    }
+
+    try {
+      let response;
+      if (this.editingScheduler) {
+        // Update existing task
+        response = await fetch(`/api/scheduler/tasks/${this.editingScheduler.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, prompt, intervalMs, enabled }),
+        });
+      } else {
+        // Create new task
+        response = await fetch('/api/scheduler/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, prompt, intervalMs, enabled }),
+        });
+      }
+
+      if (response.ok) {
+        this.showToast('Scheduled task saved successfully', 'success');
+        this.closeSchedulerModal();
+        this.loadScheduledTasks();
+      } else {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save');
+      }
+    } catch (error) {
+      console.error('Error saving scheduled task:', error);
+      this.showToast(`Failed to save scheduled task: ${error.message}`, 'error');
+    }
+  }
+
+  async toggleScheduler(taskId, enabled) {
+    try {
+      const response = await fetch(`/api/scheduler/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+
+      if (response.ok) {
+        this.showToast(`Task ${enabled ? 'enabled' : 'disabled'} successfully`, 'success');
+        this.loadScheduledTasks();
+      } else {
+        throw new Error('Failed to update');
+      }
+    } catch (error) {
+      console.error('Error toggling scheduled task:', error);
+      this.showToast('Failed to update scheduled task', 'error');
+    }
+  }
+
+  async runSchedulerNow(taskId) {
+    try {
+      this.showToast('Running task...', 'success');
+      const response = await fetch(`/api/scheduler/tasks/${taskId}/run`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        this.showToast(`Task started in session ${data.run.sessionId}`, 'success');
+        this.loadScheduledTasks();
+      } else {
+        throw new Error('Failed to run');
+      }
+    } catch (error) {
+      console.error('Error running scheduled task:', error);
+      this.showToast('Failed to run scheduled task', 'error');
+    }
+  }
+
+  async deleteScheduler(taskId) {
+    if (!confirm('Are you sure you want to delete this scheduled task?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/scheduler/tasks/${taskId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        this.showToast('Scheduled task deleted successfully', 'success');
+        this.loadScheduledTasks();
+      } else {
+        throw new Error('Failed to delete');
+      }
+    } catch (error) {
+      console.error('Error deleting scheduled task:', error);
+      this.showToast('Failed to delete scheduled task', 'error');
+    }
+  }
+
   // ==================== Toast ====================
 
   showToast(message, type = 'success') {
@@ -463,6 +728,19 @@ class ValleyAgentUI {
     this.elements.messageInput.value = '';
     this.updateStatus('processing', 'Processing...');
     this.isProcessing = true;
+    this.elements.stopBtn.style.display = 'inline-block';
+    this.elements.sendBtn.style.display = 'none';
+  }
+
+  stopSession() {
+    if (!this.currentSessionId || this.ws.readyState !== WebSocket.OPEN) return;
+
+    this.ws.send(JSON.stringify({
+      type: 'stop_session',
+      sessionId: this.currentSessionId,
+    }));
+
+    this.showToast('Stopping session...', 'success');
   }
 
   handleMessage(message) {
@@ -503,12 +781,34 @@ class ValleyAgentUI {
         }
         this.updateStatus('connected', 'Connected');
         this.isProcessing = false;
+        this.elements.stopBtn.style.display = 'none';
+        this.elements.sendBtn.style.display = 'inline-block';
         break;
 
       case 'error':
         this.addMessage('error', message.error);
         this.updateStatus('connected', 'Connected');
         this.isProcessing = false;
+        this.elements.stopBtn.style.display = 'none';
+        this.elements.sendBtn.style.display = 'inline-block';
+        break;
+
+      case 'stopped':
+        this.addMessage('result', 'Session stopped by user');
+        this.updateStatus('connected', 'Connected');
+        this.isProcessing = false;
+        this.elements.stopBtn.style.display = 'none';
+        this.elements.sendBtn.style.display = 'inline-block';
+        break;
+
+      case 'session_stopped':
+        if (message.success) {
+          this.showToast('Session stopped', 'success');
+        }
+        this.updateStatus('connected', 'Connected');
+        this.isProcessing = false;
+        this.elements.stopBtn.style.display = 'none';
+        this.elements.sendBtn.style.display = 'inline-block';
         break;
 
       case 'system':
