@@ -1,0 +1,14 @@
+{
+  "name": "claudevalley",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.27"
+  }
+}
